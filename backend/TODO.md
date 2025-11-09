@@ -1,0 +1,7 @@
+- [x] Update import in backend/core/services.py to 'from google import genai'
+- [x] Remove genai.configure block
+- [x] Create self.client in __init__ using genai.Client(api_key=...)
+- [x] Remove self.ocr_model and self.video_model
+- [x] Update verify_cac_vs_stated to use client.models.generate_content
+- [x] Update verify_video_vs_stated to use client.files.upload and client.models.generate_content
+- [x] Test the server to ensure no errors

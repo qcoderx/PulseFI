@@ -1,18 +1,12 @@
 from sme.models import BusinessProfile, CACDocument, BusinessVideo
 from users.models import User
 from django.conf import settings
-import google.generativeai as genai
+import google.genai as genai
 from mimetypes import guess_type
 import logging
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-# Configure Gemini API
-try:
-    genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
-except Exception as e:
-    logger.error(f"Failed to configure Gemini AI: {e}")
 
 class PulseEngine:
     """
@@ -25,6 +19,7 @@ class PulseEngine:
         self.bank_account_name = bank_account_name # Store the name
         self.score = 0
         self.fail_reasons = []
+        self.client = genai.Client(api_key=settings.GOOGLE_AI_API_KEY)
         self.generation_config = {
             "temperature": 0.2,
             "top_p": 1,
@@ -37,16 +32,6 @@ class PulseEngine:
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
         ]
-        self.ocr_model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config=self.generation_config,
-            safety_settings=self.safety_settings
-        )
-        self.video_model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash", # This model handles video
-            generation_config=self.generation_config,
-            safety_settings=self.safety_settings
-        )
 
 
     def run_verification(self) -> (int, str):
@@ -95,10 +80,20 @@ class PulseEngine:
             Example: "MY BUSINESS NIGERIA LTD"
             """
             
-            response = self.ocr_model.generate_content([
-                prompt,
-                {"mime_type": mime_type, "data": file_content}
-            ])
+            response = self.client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=[
+                    prompt,
+                    {"mime_type": mime_type, "data": file_content}
+                ],
+                config=genai.types.GenerateContentConfig(
+                    temperature=0.2,
+                    top_p=1,
+                    top_k=1,
+                    max_output_tokens=256,
+                    safety_settings=self.safety_settings
+                )
+            )
             
             extracted_name = response.text.strip().replace('"', '')
             cac_doc.extracted_name = extracted_name # Save for our records
@@ -152,14 +147,14 @@ class PulseEngine:
             mime_type = guess_type(video_file_path)[0]
             
             # Upload file to Gemini File API first (good for large files)
-            uploaded_file = genai.upload_file(
-                path=video_file_path,
+            uploaded_file = self.client.files.upload(
+                file=video_file_path,
                 display_name=f"video_{self.user.id}"
             )
             # Wait for file to be processed
             while uploaded_file.state.name == "PROCESSING":
                 pass # This is blocking, but fine for a hackathon
-            
+
             if uploaded_file.state.name == "FAILED":
                 raise Exception("Gemini file upload failed.")
 
@@ -167,20 +162,30 @@ class PulseEngine:
             Analyze this live video recording of a small business.
             The business owner states their industry is: '{self.profile.industry}'.
             The business name is '{self.profile.business_name}'.
-            
+
             Analyze the video for visual cues (e.g., products, office, equipment, signage).
             1. Briefly summarize what you see.
             2. Based *only* on the visuals, state "YES" if this summary is consistent with the stated industry, or "NO" if it is not.
-            
+
             Format your response as:
             Summary: [Your summary]
             Match: [YES/NO]
             """
 
-            response = self.video_model.generate_content([prompt, uploaded_file])
-            
+            response = self.client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=[prompt, uploaded_file],
+                config=genai.types.GenerateContentConfig(
+                    temperature=0.2,
+                    top_p=1,
+                    top_k=1,
+                    max_output_tokens=256,
+                    safety_settings=self.safety_settings
+                )
+            )
+
             # Clean up the file from Gemini
-            genai.delete_file(uploaded_file.name)
+            self.client.files.delete(name=uploaded_file.name)
 
             response_text = response.text
             summary_line = next((line for line in response_text.split('\n') if line.startswith("Summary:")), "Summary: N/A")

@@ -26,17 +26,13 @@ class LenderProfileViewSet(viewsets.ModelViewSet):
         return LenderProfileSerializer
     
     def perform_create(self, serializer):
-        # Ensure user doesn't already have a lender profile
-        if hasattr(self.request.user, 'lender_profile'):
-            return Response(
-                {"error": "Lender profile already exists"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
         serializer.save(user=self.request.user)
 
-class MarketplaceViewSet(viewsets.ViewSet):
+class MarketplaceViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return None
     
     def list(self, request):
         """Get filtered list of verified SMEs for marketplace"""

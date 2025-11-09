@@ -5,13 +5,46 @@ class BusinessProfile(models.Model):
     """
     Stores the "Stated Truth"
     """
+    BUSINESS_CATEGORIES = [
+        ('software', 'Software Development'),
+        ('ecommerce', 'E-commerce'),
+        ('consulting', 'Consulting'),
+        ('manufacturing', 'Manufacturing'),
+        ('retail', 'Retail'),
+        ('healthcare', 'Healthcare'),
+        ('education', 'Education'),
+        ('finance', 'Finance'),
+        ('other', 'Other'),
+    ]
+
+    VERIFICATION_STATUS = [
+        ('pending', 'Pending'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    ]
+
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
     business_name = models.CharField(max_length=255)
+    business_registration_number = models.CharField(max_length=100, blank=True)
+    business_email = models.EmailField(blank=True)
+    business_phone = models.CharField(max_length=20, blank=True)
+    business_address = models.TextField(blank=True)
     industry = models.CharField(max_length=100, blank=True)
+    business_category = models.CharField(max_length=50, choices=BUSINESS_CATEGORIES, blank=True)
+    date_of_incorporation = models.DateField(null=True, blank=True)
+    number_of_employees = models.IntegerField(null=True, blank=True)
+    monthly_revenue = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    annual_revenue = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    business_description = models.TextField(blank=True)
+    pulse_score = models.IntegerField(default=0)
+    profit_score = models.IntegerField(default=0)
+    verification_status = models.CharField(max_length=20, choices=VERIFICATION_STATUS, default='pending')
+    mono_connected = models.BooleanField(default=False)
     location = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
     founded_date = models.DateField(null=True, blank=True)
-    # Other fields from the "Stated Truth" form
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.business_name

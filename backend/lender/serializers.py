@@ -47,7 +47,8 @@ class VerifiedSMESerializer(serializers.ModelSerializer):
 class SMEDetailSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     business_category_display = serializers.CharField(source='get_business_category_display', read_only=True)
-    
+    verification_status_display = serializers.CharField(source='get_verification_status_display', read_only=True)
+
     class Meta:
         model = BusinessProfile
         fields = [
