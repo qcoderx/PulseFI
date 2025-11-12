@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     
     path('lender/', include('lender.urls')),
+    path('api/escrow/', include('escrow.urls')),
 ]
 
 # Serve media files in development (for CAC uploads and videos)

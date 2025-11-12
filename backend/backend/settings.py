@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'sme',
     'lender',
     'utils', # Added utils just in case
+    'escrow'
 ]
 
 MIDDLEWARE = [
@@ -194,3 +195,8 @@ GOOGLE_AI_API_KEY = os.getenv('GOOGLE_AI_API_KEY')
 # Mono Configuration
 MONO_SECRET_KEY = os.getenv('MONO_SECRET_KEY')
 MONO_BASE_URL = 'https://api.withmono.com'
+
+# Paystack Configuration
+PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_...')
+PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', 'pk_test_...')
+PAYSTACK_CALLBACK_URL = os.getenv('PAYSTACK_CALLBACK_URL', 'https://yourdomain.com/api/escrow/webhook/')
