@@ -11,6 +11,7 @@ django-cors-headers==4.9.0
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
 drf-spectacular==0.29.0
+drf-nested-routers==0.93.4 # <-- ADD THIS LINE
 google-auth==2.43.0
 google-genai==1.49.0
 h11==0.16.0

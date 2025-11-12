@@ -1,9 +1,11 @@
-from sme.models import BusinessProfile, CACDocument, BusinessVideo
+from sme.models import BusinessProfile, CACDocument, BusinessVideo, Score
 from users.models import User
 from django.conf import settings
 import google.genai as genai
 from mimetypes import guess_type
 import logging
+import requests  # Added for ProfitEngine
+import json      # Added for ProfitEngine
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -81,7 +83,7 @@ class PulseEngine:
             """
             
             response = self.client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.5-flash',
                 contents=[
                     prompt,
                     {"mime_type": mime_type, "data": file_content}
@@ -173,7 +175,7 @@ class PulseEngine:
             """
 
             response = self.client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.5-flash',
                 contents=[prompt, uploaded_file],
                 config=genai.types.GenerateContentConfig(
                     temperature=0.2,
@@ -209,3 +211,124 @@ class PulseEngine:
             logger.error(f"Video verification failed for {self.user.email}: {e}")
             self.score -= 20
             self.fail_reasons.append("AI analysis of business video failed.")
+
+# --- NEWLY ADDED PROFIT ENGINE ---
+
+class ProfitEngine:
+    """
+    The Core "Profit Engine" AI Service.
+    Fetches Mono transactions and uses AI to analyze financial health.
+    """
+    def __init__(self, user: User, mono_account_id: str):
+        self.user = user
+        self.mono_account_id = mono_account_id
+        self.mono_api_key = settings.MONO_SECRET_KEY
+        self.mono_base_url = settings.MONO_BASE_URL
+        self.client = genai.Client(api_key=settings.GOOGLE_AI_API_KEY)
+        self.safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+        ]
+
+    def _get_mono_transactions(self) -> dict | None:
+        """
+        Fetches the last 12 months of transactions from Mono.
+        """
+        try:
+            headers = {'mono-sec-key': self.mono_api_key}
+            # Fetch last 12 months of transactions
+            url = f"{self.mono_base_url}/accounts/{self.mono_account_id}/transactions?months=12"
+            
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            data = response.json()
+            if not data or 'data' not in data:
+                logger.warning(f"No transaction data returned from Mono for user {self.user.email}")
+                return None
+            
+            return data['data']
+        
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Mono API request failed for {self.user.email} (ProfitEngine): {e}")
+            return None
+
+    def analyze_financial_health(self) -> (int, str):
+        """
+        Runs the full profit analysis workflow.
+        """
+        transactions = self._get_mono_transactions()
+        
+        if not transactions:
+            return 0, "Could not retrieve bank transactions from Mono."
+
+        # Simplify transactions for the AI prompt
+        simplified_txns = []
+        for txn in transactions:
+            simplified_txns.append({
+                "date": txn.get('date'),
+                "type": txn.get('type'),
+                "amount": txn.get('amount') / 100, # Convert from kobo
+                "narration": txn.get('narration')
+            })
+
+        # Create a string representation for the prompt
+        txn_string = "\n".join([json.dumps(txn) for txn in simplified_txns])
+
+        prompt = f"""
+        You are an expert SME financial analyst and risk assessor for a Nigerian lender.
+        Here is the last 12 months of bank transactions for a business:
+        
+        {txn_string}
+
+        Analyze this data to determine a 'Profit Score' from 0-100. 
+        100 is a perfect, highly profitable, and stable business. 0 is a business with no income or high risk.
+
+        Base your score on these key factors:
+        1.  **Revenue Consistency:** Is there a stable, predictable inflow of cash (credits)?
+        2.  **Cash Flow:** Is the net cash flow (credits vs. debits) generally positive?
+        3.  **Risk Indicators:** Are there many gambling (e.g., 'bet9ja', 'sportybet') or payday loan (e.g., 'branch', 'carbon') transactions?
+        4.  **Customer Behavior:** What do the narrations suggest about the *source* of income?
+        5.  **Average Balance:** What does the balance trend look like?
+
+        Provide your analysis and score in this exact format:
+        Score: [0-100]
+        Analysis: [Your 2-3 sentence summary explaining the score.]
+        """
+
+        try:
+            response = self.client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[prompt],
+                config=genai.types.GenerateContentConfig(
+                    temperature=0.3,
+                    top_p=1,
+                    top_k=1,
+                    max_output_tokens=512,
+                    safety_settings=self.safety_settings
+                )
+            )
+
+            response_text = response.text
+            
+            # Parse the response
+            score = 0
+            analysis = "AI analysis failed."
+            
+            for line in response_text.split('\n'):
+                if line.startswith("Score:"):
+                    score_str = line.split(":", 1)[-1].strip()
+                    try:
+                        score = int(score_str)
+                    except ValueError:
+                        score = 0
+                elif line.startswith("Analysis:"):
+                    analysis = line.split(":", 1)[-1].strip()
+            
+            return score, analysis
+
+        except Exception as e:
+            logger.error(f"ProfitEngine AI analysis failed for {self.user.email}: {e}")
+            return 0, f"AI analysis of transactions failed: {e}"
