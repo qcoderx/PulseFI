@@ -4,14 +4,21 @@ from .views import (
     CACUploadView, 
     VideoUploadView, 
     MonoConnectView,
-    SMEBashboardView
+    SMEDashboardView,
+    VerifyCACView,
+    BusinessTypeView,
+    SMEOffersView,
+    SMEOfferResponseView
 )
 
-# This maps to the /sme/ endpoints in the main urls.py
 urlpatterns = [
     path('profile', BusinessProfileView.as_view(), name='sme-profile'),
     path('upload/cac', CACUploadView.as_view(), name='sme-upload-cac'),
     path('upload/video', VideoUploadView.as_view(), name='sme-upload-video'),
+    path('verify-cac', VerifyCACView.as_view(), name='sme-verify-cac'),
+    path('business-type', BusinessTypeView.as_view(), name='sme-business-type'),
     path('mono/connect', MonoConnectView.as_view(), name='sme-mono-connect'),
-    path('dashboard', SMEBashboardView.as_view(), name='sme-dashboard'),
+    path('dashboard', SMEDashboardView.as_view(), name='sme-dashboard'),
+    path('offers', SMEOffersView.as_view(), name='sme-offers'),
+    path('offers/<str:offerId>/respond', SMEOfferResponseView.as_view(), name='sme-offer-respond'),
 ]

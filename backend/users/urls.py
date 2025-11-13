@@ -1,9 +1,9 @@
 from django.urls import path
-from .views import SmeRegisterView, LenderRegisterView, LoginView
+from .views import SmeRegisterView, LenderRegisterView, LoginView, RefreshTokenView
 
-# This maps to the /auth/ endpoints in the main urls.py
 urlpatterns = [
-    path('sme/register', SmeRegisterView.as_view(), name='sme-register'),
-    path('lender/register', LenderRegisterView.as_view(), name='lender-register'),
+    path('register/sme', SmeRegisterView.as_view(), name='sme-register'),
+    path('register/lender', LenderRegisterView.as_view(), name='lender-register'),
     path('login', LoginView.as_view(), name='login'),
+    path('refresh', RefreshTokenView.as_view(), name='refresh-token'),
 ]

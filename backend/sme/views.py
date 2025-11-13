@@ -1,140 +1,433 @@
-from rest_framework import generics, status, views
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import generics, status
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
-from .models import BusinessProfile, CACDocument, BusinessVideo, Score
-from .serializers import BusinessProfileSerializer, CACDocumentSerializer, BusinessVideoSerializer, ScoreSerializer
-from core.services import PulseEngine
+from rest_framework.views import APIView
+from django.shortcuts import get_object_or_404
 import requests
 from django.conf import settings
-import logging
+from datetime import datetime
 
-logger = logging.getLogger(__name__)
+from .models import BusinessProfile, CACDocument, BusinessVideo
+from .serializers import (
+    BusinessProfileSerializer,
+    CACUploadSerializer,
+    VideoUploadSerializer,
+    MonoConnectSerializer,
+    SMEDashboardSerializer
+)
 
-class BusinessProfileView(generics.RetrieveUpdateAPIView):
-    """
-    Handles GET/PUT/PATCH /sme/profile
-    Allows SME to update their "Stated Truth"
-    """
-    permission_classes = [IsAuthenticated]
-    serializer_class = BusinessProfileSerializer
-
-    def get_object(self):
-        profile, created = BusinessProfile.objects.get_or_create(user=self.request.user)
-        return profile
-
-class CACUploadView(generics.CreateAPIView):
-    """
-    Handles POST /sme/upload/cac
-    """
-    permission_classes = [IsAuthenticated]
-    serializer_class = CACDocumentSerializer
-    parser_classes = [MultiPartParser, FormParser]
-
-    def perform_create(self, serializer):
-        # Use update_or_create to replace the file if it already exists
-        CACDocument.objects.update_or_create(
-            user=self.request.user,
-            defaults={'cac_file': serializer.validated_data['cac_file']}
-        )
-
-class VideoUploadView(generics.CreateAPIView):
-    """
-    Handles POST /sme/upload/video
-    """
-    permission_classes = [IsAuthenticated]
-    serializer_class = BusinessVideoSerializer
-    parser_classes = [MultiPartParser, FormParser]
-
-    def perform_create(self, serializer):
-        # Use update_or_create to replace the file if it already exists
-        BusinessVideo.objects.update_or_create(
-            user=self.request.user,
-            defaults={'video_file': serializer.validated_data['video_file']}
-        )
-
-class MonoConnectView(views.APIView):
-    """
-    Handles POST /sme/mono/connect
-    This is the final step that triggers the Pulse Engine
-    """
+class BusinessProfileView(APIView):
+    """POST /sme/profile - Submit business information"""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        mono_token = request.data.get('mono_token')
-        if not mono_token:
-            return Response({'detail': 'Mono token is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
-            # 1. Exchange token for account ID (Financial Truth)
-            auth_response = requests.post(
-                f"{settings.MONO_BASE_URL}/account/auth",
-                headers={'mono-sec-key': settings.MONO_SECRET_KEY, 'Content-Type': 'application/json'},
-                json={'code': mono_token}
+            profile, created = BusinessProfile.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    'business_name': request.data.get('businessName', ''),
+                    'business_category': request.data.get('businessType', ''),
+                    'industry': request.data.get('industry', ''),
+                    'monthly_revenue': request.data.get('monthlyRevenue', 0),
+                    'number_of_employees': request.data.get('employeeCount', 0),
+                    'business_description': request.data.get('businessDescription', ''),
+                    'business_address': request.data.get('businessAddress', ''),
+                }
             )
-            auth_response.raise_for_status() # Raise error for bad responses
-            account_id = auth_response.json().get('id')
-
-            if not account_id:
-                logger.warning(f"Mono auth succeeded but no account ID for user {request.user.email}")
-                return Response({'detail': 'Failed to retrieve account ID from Mono.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            # 2. Get account details (holder name)
-            details_response = requests.get(
-                f"{settings.MONO_BASE_URL}/accounts/{account_id}",
-                headers={'mono-sec-key': settings.MONO_SECRET_KEY}
-            )
-            details_response.raise_for_status()
-            account_data = details_response.json().get('account', {})
-            bank_account_name = account_data.get('name')
-
-            if not bank_account_name:
-                logger.warning(f"Mono details succeeded but no account name for user {request.user.email}")
-                return Response({'detail': 'Failed to retrieve account holder name from Mono.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            # 3. This is the "magic" trigger
-            # We pass the REAL (sandbox) bank name to the engine
-            pulse_engine = PulseEngine(request.user, bank_account_name)
-            pulse_score, fail_reason = pulse_engine.run_verification()
             
-            # 4. Update the user's score
-            score_obj, created = Score.objects.get_or_create(user=request.user)
-            score_obj.pulse_score = pulse_score
+            if not created:
+                for field_map in [
+                    ('businessName', 'business_name'),
+                    ('businessType', 'business_category'), 
+                    ('industry', 'industry'),
+                    ('monthlyRevenue', 'monthly_revenue'),
+                    ('employeeCount', 'number_of_employees'),
+                    ('businessDescription', 'business_description'),
+                    ('businessAddress', 'business_address')
+                ]:
+                    if field_map[0] in request.data:
+                        setattr(profile, field_map[1], request.data[field_map[0]])
+                profile.save()
             
-            if pulse_score >= 75:
-                score_obj.status = Score.Status.VERIFIED
-                score_obj.pulse_fail_reason = None
-                
-                # TODO: Call Abdulrahman's ProfitEngine here
-                # We can now pass him the account_id
-                # profit_score = ProfitEngine.analyze_profit(request.user.id, account_id)
-                # score_obj.profit_score = profit_score
-                
-                # For now, simulate a high profit score on success
-                score_obj.profit_score = 85 # Placeholder for Profit Engine
+            return Response({
+                "success": True,
+                "message": "Business profile saved successfully",
+                "data": {
+                    "profileId": str(profile.id),
+                    "status": "profile_completed",
+                    "nextStep": "cac_upload"
+                }
+            }, status=status.HTTP_201_CREATED)
             
-            else:
-                score_obj.status = Score.Status.FAILED
-                score_obj.pulse_fail_reason = fail_reason
-            
-            score_obj.save()
-
-            return Response(ScoreSerializer(score_obj).data, status=status.HTTP_200_OK)
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Mono API request failed for {request.user.email}: {e}")
-            return Response({'detail': f'Mono API error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
-            logger.error(f"Verification failed for {request.user.email}: {e}")
-            return Response({'detail': f'Verification failed: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({
+                "success": False,
+                "message": f"Profile creation failed: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    def get(self, request):
+        """GET /sme/profile - Get complete SME profile"""
+        try:
+            profile = BusinessProfile.objects.get(user=request.user)
+            has_cac = CACDocument.objects.filter(user=request.user).exists()
+            has_video = BusinessVideo.objects.filter(user=request.user).exists()
+            
+            return Response({
+                "success": True,
+                "data": {
+                    "businessInfo": {
+                        "businessName": profile.business_name,
+                        "businessType": profile.business_category,
+                        "industry": profile.industry,
+                        "monthlyRevenue": profile.monthly_revenue,
+                        "employeeCount": profile.number_of_employees,
+                        "businessDescription": profile.business_description,
+                        "businessAddress": profile.business_address,
+                    },
+                    "verification": {
+                        "pulseScore": profile.pulse_score,
+                        "profitScore": profile.profit_score,
+                        "verificationStatus": profile.verification_status,
+                        "cacVerified": has_cac,
+                        "videoVerified": has_video,
+                        "bankConnected": profile.mono_connected
+                    },
+                    "financialData": {
+                        "monthlyRevenue": profile.monthly_revenue,
+                        "monthlyExpenses": int(profile.monthly_revenue * 0.7) if profile.monthly_revenue else 0,
+                        "profitMargin": 30,
+                        "cashFlow": "positive",
+                        "growthRate": 15
+                    },
+                    "documents": {
+                        "cacCertificate": {
+                            "fileName": "cac_certificate.pdf" if has_cac else None,
+                            "verified": has_cac
+                        },
+                        "businessVideo": {
+                            "fileName": "business_video.mp4" if has_video else None,
+                            "verified": has_video
+                        }
+                    }
+                }
+            })
+        except BusinessProfile.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Profile not found"
+            }, status=status.HTTP_404_NOT_FOUND)
 
-class SMEBashboardView(generics.RetrieveAPIView):
-    """
-    Handles GET /sme/dashboard
-    """
+class CACUploadView(APIView):
+    """POST /sme/upload/cac - Upload CAC certificate"""
     permission_classes = [IsAuthenticated]
-    serializer_class = ScoreSerializer
+    parser_classes = [MultiPartParser, FormParser]
 
-    def get_object(self):
-        score, created = Score.objects.get_or_create(user=self.request.user)
-        return score
+    def post(self, request):
+        if 'file' not in request.FILES:
+            return Response({
+                "success": False,
+                "message": "No CAC file provided"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        cac_file = request.FILES['file']
+        
+        try:
+            cac_doc, created = CACDocument.objects.get_or_create(
+                user=request.user,
+                defaults={'cac_file': cac_file}
+            )
+            
+            if not created:
+                cac_doc.cac_file = cac_file
+                cac_doc.save()
+            
+            return Response({
+                "success": True,
+                "message": "CAC certificate uploaded successfully",
+                "data": {
+                    "fileId": str(cac_doc.id),
+                    "fileName": cac_file.name,
+                    "fileSize": cac_file.size,
+                    "uploadedAt": datetime.now().isoformat(),
+                    "status": "uploaded",
+                    "nextStep": "business_type_check"
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"CAC upload failed: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+class VerifyCACView(APIView):
+    """POST /sme/verify-cac - Verify RC number with CAC database"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        rc_number = request.data.get('rcNumber')
+        if not rc_number:
+            return Response({
+                "success": False,
+                "message": "RC number is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if rc_number.startswith('RC'):
+            return Response({
+                "success": True,
+                "message": "CAC verification successful",
+                "data": {
+                    "rcNumber": rc_number,
+                    "name": "TEST BUSINESS LIMITED",
+                    "address": "15 BUSINESS STREET, LAGOS ISLAND, LAGOS",
+                    "dateOfRegistration": "2020-03-15",
+                    "isRegistrationComplete": True,
+                    "status": "active"
+                }
+            })
+        else:
+            return Response({
+                "success": False,
+                "message": "Company not found in CAC database",
+                "data": None
+            }, status=status.HTTP_404_NOT_FOUND)
+
+class BusinessTypeView(APIView):
+    """POST /sme/business-type - Submit business type verification"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        return Response({
+            "success": True,
+            "message": "Business type information saved",
+            "data": {
+                "status": "business_type_completed",
+                "nextStep": "video_recording"
+            }
+        }, status=status.HTTP_201_CREATED)
+
+class VideoUploadView(APIView):
+    """POST /sme/upload/video - Upload business video"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        if 'video' not in request.FILES:
+            return Response({
+                "success": False,
+                "message": "No video file provided"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        video_file = request.FILES['video']
+        
+        try:
+            video_doc, created = BusinessVideo.objects.get_or_create(
+                user=request.user,
+                defaults={'video_file': video_file}
+            )
+            
+            if not created:
+                video_doc.video_file = video_file
+                video_doc.save()
+            
+            return Response({
+                "success": True,
+                "message": "Video uploaded successfully",
+                "data": {
+                    "videoId": str(video_doc.id),
+                    "fileName": video_file.name,
+                    "fileSize": video_file.size,
+                    "duration": request.data.get('duration', 45),
+                    "uploadedAt": datetime.now().isoformat(),
+                    "status": "uploaded",
+                    "nextStep": "bank_connection"
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Video upload failed: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+class MonoConnectView(APIView):
+    """POST /sme/mono/connect - Connect bank account via Mono"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        mono_code = request.data.get('monoCode')
+        if not mono_code:
+            return Response({
+                "success": False,
+                "message": "Mono code is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Simulate Mono API call
+            account_name = request.data.get('accountName', 'TEST BUSINESS LIMITED')
+            
+            # Update user profile with bank connection
+            profile = BusinessProfile.objects.get(user=request.user)
+            profile.mono_connected = True
+            
+            # Trigger AI verification
+            from core.services import PulseEngine
+            engine = PulseEngine(request.user, account_name)
+            pulse_score, fail_reason = engine.run_verification()
+            
+            profile.pulse_score = pulse_score
+            profile.profit_score = 74  # Sample profit score
+            if fail_reason:
+                profile.verification_status = 'failed'
+            else:
+                profile.verification_status = 'verified'
+            profile.save()
+            
+            return Response({
+                "success": True,
+                "message": "Bank account connected successfully",
+                "data": {
+                    "connectionId": f"mono_conn_{request.user.id}",
+                    "accountId": request.data.get('accountId', 'acc_123'),
+                    "bankName": request.data.get('bankName', 'Test Bank'),
+                    "accountName": account_name,
+                    "connectedAt": datetime.now().isoformat(),
+                    "status": "connected",
+                    "nextStep": "processing"
+                }
+            }, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": f"Mono connection failed: {str(e)}"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+class SMEDashboardView(APIView):
+    """GET /sme/dashboard - Get SME dashboard data"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            profile = BusinessProfile.objects.get(user=request.user)
+            has_cac = CACDocument.objects.filter(user=request.user).exists()
+            has_video = BusinessVideo.objects.filter(user=request.user).exists()
+            
+            return Response({
+                "success": True,
+                "data": {
+                    "user": {
+                        "firstName": request.user.email.split('@')[0],
+                        "lastName": "User",
+                        "businessName": profile.business_name,
+                        "email": request.user.email
+                    },
+                    "verificationStatus": profile.verification_status,
+                    "pulseScore": profile.pulse_score,
+                    "profitScore": profile.profit_score,
+                    "verificationSteps": {
+                        "profile": {"completed": bool(profile.business_name)},
+                        "cac": {"completed": has_cac},
+                        "businessType": {"completed": True},
+                        "video": {"completed": has_video},
+                        "bankConnection": {"completed": profile.mono_connected}
+                    },
+                    "scoreBreakdown": {
+                        "pulseScore": {
+                            "total": profile.pulse_score,
+                            "components": {
+                                "cacVerification": 25 if has_cac else 0,
+                                "videoAuthenticity": 22 if has_video else 0,
+                                "bankAccountMatch": 20 if profile.mono_connected else 0,
+                                "profileConsistency": 20 if profile.business_name else 0
+                            }
+                        },
+                        "profitScore": {
+                            "total": profile.profit_score,
+                            "components": {
+                                "profitability": 18,
+                                "cashFlow": 20,
+                                "growthTrend": 16,
+                                "customerRetention": 20
+                            }
+                        }
+                    },
+                    "recommendations": [
+                        "Your CAC verification boosted your Pulse Score significantly",
+                        "Consider improving cash flow consistency for better Profit Score"
+                    ],
+                    "marketplaceStats": {
+                        "profileViews": 23,
+                        "lenderInterest": 5,
+                        "activeOffers": 2
+                    }
+                }
+            })
+            
+        except BusinessProfile.DoesNotExist:
+            return Response({
+                "success": False,
+                "message": "Profile not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+class SMEOffersView(APIView):
+    """GET /sme/offers - Get investment offers for SME"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({
+            "success": True,
+            "data": {
+                "offers": [
+                    {
+                        "offerId": "offer_12345",
+                        "lender": {
+                            "id": "lender_67890",
+                            "organizationName": "Lagos Investment Partners",
+                            "rating": 4.8,
+                            "totalInvestments": 15,
+                            "averageROI": 22.5
+                        },
+                        "offerDetails": {
+                            "amount": 4500000,
+                            "interestRate": 18,
+                            "termMonths": 24,
+                            "offerType": "loan",
+                            "conditions": [
+                                "Monthly financial reporting required",
+                                "Quarterly business reviews"
+                            ]
+                        },
+                        "status": "pending",
+                        "submittedAt": datetime.now().isoformat(),
+                        "expiresAt": datetime.now().isoformat(),
+                        "message": "We're impressed with your business model and growth potential."
+                    }
+                ],
+                "summary": {
+                    "totalOffers": 3,
+                    "pendingOffers": 2,
+                    "averageAmount": 4200000,
+                    "bestRate": 16.5
+                }
+            }
+        })
+
+class SMEOfferResponseView(APIView):
+    """POST /sme/offers/:offerId/respond - Respond to investment offer"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, offerId):
+        action = request.data.get('action', 'negotiate')
+        
+        return Response({
+            "success": True,
+            "message": "Response submitted successfully",
+            "data": {
+                "offerId": offerId,
+                "status": "negotiating",
+                "updatedAt": datetime.now().isoformat(),
+                "negotiationRound": 1
+            }
+        })

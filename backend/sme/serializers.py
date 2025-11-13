@@ -1,22 +1,30 @@
 from rest_framework import serializers
 from .models import BusinessProfile, CACDocument, BusinessVideo, Score
+from users.models import User
 
 class BusinessProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessProfile
-        fields = ('business_name', 'industry', 'location', 'description', 'founded_date')
+        fields = [
+            'business_name', 'business_category', 'industry', 
+            'monthly_revenue', 'number_of_employees', 'business_description',
+            'business_address'
+        ]
 
-class CACDocumentSerializer(serializers.ModelSerializer):
+class CACUploadSerializer(serializers.ModelSerializer):
     class Meta:
         model = CACDocument
-        fields = ('cac_file',)
+        fields = ['cac_file']
 
-class BusinessVideoSerializer(serializers.ModelSerializer):
+class VideoUploadSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessVideo
-        fields = ('video_file',)
+        fields = ['video_file']
 
-class ScoreSerializer(serializers.ModelSerializer):
+class MonoConnectSerializer(serializers.Serializer):
+    mono_token = serializers.CharField()
+
+class SMEDashboardSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Score
-        fields = ('pulse_score', 'profit_score', 'status', 'pulse_fail_reason')
+        model = BusinessProfile
+        fields = ['business_name', 'verification_status', 'pulse_score', 'profit_score']
