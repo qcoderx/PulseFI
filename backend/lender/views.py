@@ -7,6 +7,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from datetime import datetime
 from .models import LenderProfile, SMEInterest, SearchFilter
+# --- UPDATED IMPORTS ---
 from .serializers import (
     LenderProfileSerializer, LenderProfileCreateSerializer,
     VerifiedSMESerializer, SMEDetailSerializer,
@@ -15,6 +16,7 @@ from .serializers import (
     MarketplaceFilterSerializer
 )
 from sme.models import BusinessProfile
+from rest_framework import serializers # Added
 
 class LenderProfileViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -33,9 +35,13 @@ class LenderProfileViewSet(viewsets.ModelViewSet):
 class MarketplaceViewSet(viewsets.GenericViewSet):
     """GET /lender/marketplace - Get list of verified SMEs for lenders"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = VerifiedSMESerializer
 
     def get_queryset(self):
-        return None
+        # --- MODIFIED THIS ---
+        # Return a base queryset, even if empty, to help spectacular
+        return BusinessProfile.objects.filter(verification_status='verified')
     
     def list(self, request):
         try:
@@ -47,10 +53,7 @@ class MarketplaceViewSet(viewsets.GenericViewSet):
             }, status=status.HTTP_404_NOT_FOUND)
         
         # Get verified SMEs
-        queryset = BusinessProfile.objects.filter(
-            verification_status='verified',
-            pulse_score__gte=75
-        ).order_by('-pulse_score')
+        queryset = self.get_queryset().filter(pulse_score__gte=75).order_by('-pulse_score')
         
         # Apply filters from query params
         industry = request.query_params.get('industry')
@@ -143,6 +146,7 @@ class MarketplaceViewSet(viewsets.GenericViewSet):
             defaults={'status': 'viewed'}
         )
         
+        # !!! WARNING: This response contains MOCKED/SAMPLE data !!!
         return Response({
             "success": True,
             "data": {
@@ -155,8 +159,8 @@ class MarketplaceViewSet(viewsets.GenericViewSet):
                     "employeeCount": sme_business.number_of_employees or 8,
                     "location": sme_business.business_address or "Lagos Island, Lagos",
                     "businessDescription": sme_business.business_description,
-                    "targetMarket": "Young professionals aged 25-40",
-                    "competitiveAdvantage": "Unique blend of traditional and modern designs"
+                    "targetMarket": "Young professionals aged 25-40", # Sample
+                    "competitiveAdvantage": "Unique blend of traditional and modern designs" # Sample
                 },
                 "scores": {
                     "pulseScore": sme_business.pulse_score,
@@ -164,14 +168,14 @@ class MarketplaceViewSet(viewsets.GenericViewSet):
                     "riskLevel": "low" if sme_business.pulse_score > 80 else "medium",
                     "verificationStatus": sme_business.verification_status
                 },
-                "financialHighlights": {
+                "financialHighlights": { # Sample
                     "monthlyRevenue": sme_business.monthly_revenue or 2500000,
                     "profitMargin": 28,
                     "growthRate": 15,
                     "cashFlowStatus": "positive",
                     "debtToIncomeRatio": 0.3
                 },
-                "fundingRequest": {
+                "fundingRequest": { # Sample
                     "amount": 5000000,
                     "purpose": "Expand inventory and open new location",
                     "expectedROI": 25,
@@ -185,7 +189,7 @@ class MarketplaceViewSet(viewsets.GenericViewSet):
                     "documentsComplete": True,
                     "lastVerified": datetime.now().isoformat()
                 },
-                "marketMetrics": {
+                "marketMetrics": { # Sample
                     "profileViews": 23,
                     "lenderInterest": 5,
                     "activeOffers": 2,
@@ -245,7 +249,9 @@ class SearchFilterViewSet(viewsets.ModelViewSet):
 class LenderDashboardView(APIView):
     """GET /lender/dashboard - Get lender dashboard data"""
     permission_classes = [IsAuthenticated]
-    
+    # --- ADDED THIS LINE ---
+    serializer_class = serializers.Serializer # Dummy
+
     def get(self, request):
         try:
             lender_profile = LenderProfile.objects.get(user=request.user)
@@ -265,6 +271,7 @@ class LenderDashboardView(APIView):
         interests = SMEInterest.objects.filter(lender=lender_profile)
         funded_count = interests.filter(status='funded').count()
         
+        # !!! WARNING: This response contains MOCKED/SAMPLE data !!!
         return Response({
             "success": True,
             "data": {
@@ -274,20 +281,20 @@ class LenderDashboardView(APIView):
                     "organizationName": lender_profile.company_name,
                     "email": request.user.email
                 },
-                "portfolio": {
+                "portfolio": { # Partially Mocked
                     "totalInvestments": funded_count,
                     "totalAmount": funded_count * 5000000,
                     "activeInvestments": funded_count,
-                    "averageROI": 22.5,
-                    "defaultRate": 2.1
+                    "averageROI": 22.5, # Mocked
+                    "defaultRate": 2.1 # Mocked
                 },
-                "marketplaceStats": {
+                "marketplaceStats": { # Partially Mocked
                     "totalVerifiedSMEs": total_verified_smes,
-                    "newSMEsThisWeek": 8,
-                    "averagePulseScore": 78,
-                    "averageProfitScore": 71
+                    "newSMEsThisWeek": 8, # Mocked
+                    "averagePulseScore": 78, # Mocked
+                    "averageProfitScore": 71 # Mocked
                 },
-                "recentActivity": [
+                "recentActivity": [ # Mocked
                     {
                         "type": "new_sme",
                         "smeId": "sme_12345",
@@ -296,7 +303,7 @@ class LenderDashboardView(APIView):
                         "timestamp": datetime.now().isoformat()
                     }
                 ],
-                "recommendations": [
+                "recommendations": [ # Mocked
                     {
                         "smeId": "sme_12345",
                         "businessName": "Sample Business",
@@ -310,7 +317,9 @@ class LenderDashboardView(APIView):
 class LenderOffersView(APIView):
     """POST /lender/offers - Make investment offer to SME"""
     permission_classes = [IsAuthenticated]
-    
+    # --- ADDED THIS LINE ---
+    serializer_class = serializers.Serializer # Dummy
+
     def post(self, request):
         try:
             lender_profile = LenderProfile.objects.get(user=request.user)
@@ -337,7 +346,9 @@ class LenderOffersView(APIView):
                 "message": "SME not found or not verified"
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Create or update interest record
+        # !!! WARNING: This is a SIMPLIFIED implementation !!!
+        # It just creates an 'SMEInterest' record, not a real 'LoanNegotiation' offer.
+        # You should replace this with logic that creates a 'LoanNegotiation' object from the 'escrow' app.
         interest, created = SMEInterest.objects.get_or_create(
             lender=lender_profile,
             sme_business=sme_business,
@@ -361,6 +372,8 @@ class LenderOffersView(APIView):
 class AdminAnalyticsView(APIView):
     """GET /admin/analytics/overview - Get platform analytics (Admin only)"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = serializers.Serializer # Dummy
     
     def get(self, request):
         if not request.user.is_staff:
@@ -373,28 +386,29 @@ class AdminAnalyticsView(APIView):
         verified_smes = BusinessProfile.objects.filter(verification_status='verified').count()
         total_lenders = LenderProfile.objects.count()
         
+        # !!! WARNING: This response contains MOCKED/SAMPLE data !!!
         return Response({
             "success": True,
             "data": {
-                "userStats": {
+                "userStats": { # Real
                     "totalSMEs": total_smes,
                     "totalLenders": total_lenders,
                     "verifiedSMEs": verified_smes,
                     "activeLenders": total_lenders
                 },
-                "verificationStats": {
+                "verificationStats": { # Mocked
                     "averagePulseScore": 78.5,
                     "averageProfitScore": 71.2,
                     "verificationSuccessRate": 76.5,
                     "processingTime": "2.3 hours"
                 },
-                "marketplaceStats": {
+                "marketplaceStats": { # Mocked
                     "totalOffers": 156,
                     "successfulMatches": 89,
                     "totalFundingAmount": 450000000,
                     "averageOfferAmount": 4200000
                 },
-                "monthlyGrowth": {
+                "monthlyGrowth": { # Mocked
                     "newSMEs": 23,
                     "newLenders": 4,
                     "completedDeals": 12,

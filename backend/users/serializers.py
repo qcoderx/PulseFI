@@ -45,3 +45,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('id', 'email', 'user_type')
+
+# --- ADDED THIS SERIALIZER ---
+class RefreshTokenSerializer(serializers.Serializer):
+    refreshToken = serializers.CharField()

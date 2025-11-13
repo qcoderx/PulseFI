@@ -232,3 +232,18 @@ MONO_BASE_URL = 'https://api.withmono.com'
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY', 'sk_test_...')
 PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY', 'pk_test_...')
 PAYSTACK_CALLBACK_URL = os.getenv('PAYSTACK_CALLBACK_URL', 'https://yourdomain.com/api/escrow/webhook/')
+
+
+# --- ADDED THIS SECTION ---
+# DRF-Spectacular Settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'PulseFI API',
+    'DESCRIPTION': 'API for the PulseFI SME Lending Platform',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': True, # Set to True to see the schema file
+    # This PATTERNS list tells spectacular to ONLY scan URLs under 'api/'
+    # This fixes the operationId collision warnings.
+    'PATTERNS': [
+        r'^api/',
+    ],
+}

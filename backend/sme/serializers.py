@@ -28,3 +28,17 @@ class SMEDashboardSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessProfile
         fields = ['business_name', 'verification_status', 'pulse_score', 'profit_score']
+
+class VerifyCACSerializer(serializers.Serializer):
+    rcNumber = serializers.CharField()
+
+class BusinessTypeSerializer(serializers.Serializer):
+    businessType = serializers.CharField(required=False)
+    hasPhysicalLocation = serializers.BooleanField(required=False)
+    operatingHours = serializers.CharField(required=False)
+    businessModel = serializers.CharField(required=False)
+
+class SMEOfferResponseSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["accept", "reject", "negotiate"])
+    counterOffer = serializers.JSONField(required=False)
+    message = serializers.CharField(required=False, allow_blank=True)

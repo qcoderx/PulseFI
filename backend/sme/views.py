@@ -7,19 +7,25 @@ from django.shortcuts import get_object_or_404
 import requests
 from django.conf import settings
 from datetime import datetime
-
+# --- UPDATED IMPORTS ---
 from .models import BusinessProfile, CACDocument, BusinessVideo
 from .serializers import (
     BusinessProfileSerializer,
     CACUploadSerializer,
     VideoUploadSerializer,
     MonoConnectSerializer,
-    SMEDashboardSerializer
+    SMEDashboardSerializer,
+    VerifyCACSerializer,      # Added
+    BusinessTypeSerializer,   # Added
+    SMEOfferResponseSerializer # Added
 )
+from rest_framework import serializers # Added
 
 class BusinessProfileView(APIView):
     """POST /sme/profile - Submit business information"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = BusinessProfileSerializer
 
     def post(self, request):
         try:
@@ -122,6 +128,8 @@ class CACUploadView(APIView):
     """POST /sme/upload/cac - Upload CAC certificate"""
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
+    # --- ADDED THIS LINE ---
+    serializer_class = CACUploadSerializer
 
     def post(self, request):
         if 'file' not in request.FILES:
@@ -164,6 +172,8 @@ class CACUploadView(APIView):
 class VerifyCACView(APIView):
     """POST /sme/verify-cac - Verify RC number with CAC database"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = VerifyCACSerializer
 
     def post(self, request):
         rc_number = request.data.get('rcNumber')
@@ -173,6 +183,8 @@ class VerifyCACView(APIView):
                 "message": "RC number is required"
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # !!! WARNING: THIS IS MOCKED DATA !!!
+        # You must replace this with a real call to a CAC verification service
         if rc_number.startswith('RC'):
             return Response({
                 "success": True,
@@ -196,8 +208,12 @@ class VerifyCACView(APIView):
 class BusinessTypeView(APIView):
     """POST /sme/business-type - Submit business type verification"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = BusinessTypeSerializer
 
     def post(self, request):
+        # !!! WARNING: THIS IS MOCKED DATA !!!
+        # This endpoint doesn't save anything
         return Response({
             "success": True,
             "message": "Business type information saved",
@@ -211,6 +227,8 @@ class VideoUploadView(APIView):
     """POST /sme/upload/video - Upload business video"""
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
+    # --- ADDED THIS LINE ---
+    serializer_class = VideoUploadSerializer
 
     def post(self, request):
         if 'video' not in request.FILES:
@@ -254,6 +272,8 @@ class VideoUploadView(APIView):
 class MonoConnectView(APIView):
     """POST /sme/mono/connect - Connect bank account via Mono"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = MonoConnectSerializer
 
     def post(self, request):
         mono_code = request.data.get('monoCode')
@@ -264,14 +284,17 @@ class MonoConnectView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            # Simulate Mono API call
+            # !!! WARNING: THIS IS PARTIALLY MOCKED !!!
+            # It uses the accountName from the request, not from a real Mono API call.
+            # A real implementation would exchange mono_code for an account_id,
+            # then fetch account details (including name) from Mono.
             account_name = request.data.get('accountName', 'TEST BUSINESS LIMITED')
             
             # Update user profile with bank connection
             profile = BusinessProfile.objects.get(user=request.user)
             profile.mono_connected = True
             
-            # Trigger AI verification
+            # Trigger AI verification (This part is real)
             from core.services import PulseEngine
             engine = PulseEngine(request.user, account_name)
             pulse_score, fail_reason = engine.run_verification()
@@ -307,6 +330,8 @@ class MonoConnectView(APIView):
 class SMEDashboardView(APIView):
     """GET /sme/dashboard - Get SME dashboard data"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = SMEDashboardSerializer # Used for output inference
 
     def get(self, request):
         try:
@@ -314,6 +339,7 @@ class SMEDashboardView(APIView):
             has_cac = CACDocument.objects.filter(user=request.user).exists()
             has_video = BusinessVideo.objects.filter(user=request.user).exists()
             
+            # This data is real, pulled from the profile
             return Response({
                 "success": True,
                 "data": {
@@ -374,8 +400,12 @@ class SMEDashboardView(APIView):
 class SMEOffersView(APIView):
     """GET /sme/offers - Get investment offers for SME"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = serializers.Serializer # Dummy
 
     def get(self, request):
+        # !!! WARNING: THIS IS MOCKED DATA !!!
+        # This should query the LoanNegotiation model from the 'escrow' app
         return Response({
             "success": True,
             "data": {
@@ -417,10 +447,14 @@ class SMEOffersView(APIView):
 class SMEOfferResponseView(APIView):
     """POST /sme/offers/:offerId/respond - Respond to investment offer"""
     permission_classes = [IsAuthenticated]
+    # --- ADDED THIS LINE ---
+    serializer_class = SMEOfferResponseSerializer
 
     def post(self, request, offerId):
         action = request.data.get('action', 'negotiate')
         
+        # !!! WARNING: THIS IS MOCKED DATA !!!
+        # This should use the logic from 'escrow.views.LoanNegotiationViewSet'
         return Response({
             "success": True,
             "message": "Response submitted successfully",

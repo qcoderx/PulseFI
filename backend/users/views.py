@@ -3,7 +3,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from .serializers import SmeRegisterSerializer, LenderRegisterSerializer, UserLoginSerializer, UserSerializer
+# --- UPDATED IMPORTS ---
+from .serializers import SmeRegisterSerializer, LenderRegisterSerializer, UserLoginSerializer, UserSerializer, RefreshTokenSerializer
 from .models import User
 
 class SmeRegisterView(generics.CreateAPIView):
@@ -62,6 +63,9 @@ class LenderRegisterView(generics.CreateAPIView):
 
 class LoginView(APIView):
     """POST /auth/login"""
+    # --- ADDED THIS LINE ---
+    serializer_class = UserLoginSerializer
+
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data)
         if not serializer.is_valid():
@@ -120,6 +124,9 @@ class LoginView(APIView):
 
 class RefreshTokenView(APIView):
     """POST /auth/refresh"""
+    # --- ADDED THIS LINE ---
+    serializer_class = RefreshTokenSerializer
+
     def post(self, request):
         refresh_token = request.data.get('refreshToken')
         if not refresh_token:
